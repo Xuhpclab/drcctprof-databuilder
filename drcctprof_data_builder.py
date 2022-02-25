@@ -1,164 +1,227 @@
-#!/usr/bin/env python3
-
-import collections
-from curses import meta
 import os
-import sys
-sys.path.append('/Users/rundiliu/Documents/Github/hatchet')
-import hatchet as ht
-from pathlib import Path
-from hatchet.node import Node
-from hatchet.frame import Frame
-from hatchet.readers.hpctoolkit_reader import HPCToolkitReader
-from numpy import uint
-import drcctprof_data_builder as ddb
+from pylib import profile_pb2 as drcctprof_profile
 
-def main(input_hpctoolkit, output_hpctoolkit):
+class StringTable:
+    def __init__(self, profile:drcctprof_profile.Profile):
+        self.table = {"": 0}
+        self.maxIndex = 0
+        self.profile = profile
+        self.profile.string_table.append("")
+
+    def addString(self, temp_str):
+        if temp_str in self.table.keys():
+            return self.table[temp_str]
+        self.maxIndex += 1
+        self.table[temp_str] = self.maxIndex
+        self.profile.string_table.append(temp_str)
+        # print(temp_str + ":" + str(self.maxIndex) + ":" + self.profile.string_table[self.maxIndex])
+        return self.maxIndex
     
-    # Path to HPCToolkit database directory.
-    dirname = input_hpctoolkit
-
-    dirname_full_path = os.path.abspath(dirname)
-    builder = ddb.Builder()
+    def getTableSize(self):
+        return self.maxIndex
     
-    gf = ht.GraphFrame.from_hpctoolkit(dirname_full_path)
-    # reader = HPCToolkitReader(dirname)
-    #gf = reader.read()
+    def getString(self, index):
+        if index >= self.maxIndex:
+            return ""
+        return self.profile.string_table[index]
 
-    # for value in values:
-    #     print(value)
+class SouceFileTable:
+    def __init__(self, profile:drcctprof_profile.Profile):
+        self.profile = profile
+        self.table = {}
     
-    df = gf.dataframe
+    def addSourceFile(self, fileNameIndex, filePathIndex, type):
+        if filePathIndex in self.table.keys():
+            return self.table[filePathIndex]
+        sourceFile = self.profile.source_file.add()
+        sourceFile.id = filePathIndex
+        sourceFile.filename = fileNameIndex
+        sourceFile.location_path = filePathIndex
+        sourceFile.type = type
+        self.table[filePathIndex] = sourceFile
+        return sourceFile
+
+class FunctionTableKey:
+    def __init__(self, file_path, name):
+        self.file_path = file_path
+        self.name = name
+
+    def __eq__(self, other):
+        return self.file_path == self.file_path and  self.name == self.name
     
-    # d = df.to_dict()
+    def __hash__(self):
+        return hash(str(self.file_path) + ";" + str(self.name))
+
+class FunctionTable:
+    def __init__(self, profile:drcctprof_profile.Profile):
+        self.profile = profile
+        self.table = {}
+        self.maxIndex = 0
     
-    metric_num = 0
-    units = []
+    def addFunction(self, sourceFile:drcctprof_profile.SourceFile, name, system_name, start_line):
+        key = FunctionTableKey(sourceFile.filename, name)
+        if key in self.table.keys():
+            return self.table[key]
+        function = self.profile.function.add()
+        function.id = self.maxIndex
+        function.name = name
+        function.system_name = system_name
+        function.start_line = start_line
+        function.source_file_id = sourceFile.id
+        self.table[key] = function
+        self.maxIndex += 1
+        return function
 
-    for column in df.columns.values:
-        if "(I)" in column:
-            continue
-        if "(E)" in column:
-            column = column.replace("(E)", "")
-            temp = column.rsplit("(", 1)
-            des = temp[0].strip()
-            unit = ''
-            if len(temp) == 2:
-                unit = temp[1].split(")")[0].strip()
-            units.append(unit == "sec")
-            metric_num += 1
-            builder.addMetricType(1, unit, des)
-            # break
+class LocationTableKey:
+    def __init__(self, functionId, lineNo):
+        self.functionId = functionId
+        self.lineNo = lineNo
+
+    def __eq__(self, other):
+        return self.functionId == self.functionId and  self.lineNo == self.lineNo
     
-    for row in gf.dataframe.itertuples():
-        #print(row)
-        # the form of index is (node, rank, thread)
-        node = row[0][0]
-        if node.frame.get('type') != 'function' and node.frame.get('type') != 'statement':
-            continue
-        rank = row[0][1]
-        thread = -1
-        if len(row[0]) == 3:
-            thread = row[0][2]
-            
-        # if row[129] == 34962:
-        #     print("???")
-        
-        sumvalue = 0
-        metricMsgList = []
-        for idx in range(metric_num):
-            #sumvalue += row[2 + idx * 2]*1000000
-            """
-            value = row[2+idx*2]
-            if value != 0.0:
-                if abs(value) < 0.1:
-                    value = value * 100
-            """
-            #row[2 + idx * 2]*value
-            if units[idx]:
-                metricMsgList.append(ddb.MetricMsg(0, int(row[2 + idx * 2]*1000000), ""))
-            else:
-                metricMsgList.append(ddb.MetricMsg(0, int(row[2 + idx * 2]), ""))
-            if metricMsgList[idx].uintValue > 0:
-                sumvalue += 1
-        if sumvalue < 1:
-            continue
-        # print(row[129], rank, thread, node.frame.get('type'), row[131], row[130], row[133], row[132])
-        path = []
-        curNode = node
-        while True:
-            if curNode.frame.get('type') != 'function':
-                try:
-                    curNode = curNode.parents[0]
-                    continue
-                except:
-                    break
-            path.append(curNode)
-            try:
-                curNode = curNode.parents[0]
-            except:
-                break
-         
-        contextMsgList = []
-        curNode = node
-        parentNode = node
-        contextMsgDic = {}
-        parentContextMsgDic = {}
-        
-        for idx, val in enumerate(path):
-            if idx >= len(path) - 1:
-                break
-            curNode = val
-            parentNode = path[idx+1]
-            if thread > -1:
-                contextMsgDic = gf.dataframe.loc[(curNode, rank, thread)].to_dict()
-                parentContextMsgDic = gf.dataframe.loc[(parentNode, rank, thread)].to_dict()
-            else:
-                contextMsgDic = dict(gf.dataframe.loc[(curNode, rank)])
-                parentContextMsgDic = dict(gf.dataframe.loc[(parentNode, rank)])
-            
-            id, file, name, line, startline = contextMsgDic['nid'], parentContextMsgDic['file'], parentContextMsgDic['name'].split("+:+")[1], int(contextMsgDic['name'].split("+:+")[0]), parentContextMsgDic['line']
-            
-            if file[0] == '.':
-                file = dirname_full_path+file[1:]            
-            contextMsgList.append(ddb.ContextMsg(id, file, name, name, startline, line))
+    def __hash__(self):
+        return hash(str(self.functionId) + ";" + str(self.lineNo))
 
-        # reverse the list because it is bottom-up (children to parents). 
-        contextMsgList[:] = contextMsgList[::-1]
-        # print(contextMsgList)
-        builder.addSample(contextMsgList, metricMsgList)
+class LocationTable:
+    def __init__(self, profile):
+        self.profile = profile
+        self.table = {}
+        self.maxIndex = 0
 
-    builder.generateProfile(output_hpctoolkit)
+    def addLocation(self, function:drcctprof_profile.Function, lineNo):
+        key = LocationTableKey(function.id, lineNo)
+        if key in self.table.keys():
+            return self.table[key]
+        location = self.profile.location.add()
+        location.id = self.maxIndex
+        line = location.line.add()
+        line.function_id = function.id
+        line.line = lineNo
+        self.table[key] = location
+        self.maxIndex += 1
+        return location
 
-DEBUG_MOED = True   
-def debug():
-    main("./tests/data/hpctoolkit-laghos-profmpi-long.m", "debug.drcctprof")
+class Context:
+    def __init__(self, dcontext:drcctprof_profile.Context):
+        self.dcontext = dcontext
+        self.childrenSet = {}
     
-if __name__ == "__main__":
+    def addChild(self, childDontext:drcctprof_profile.Context):
+        if childDontext.id in self.childrenSet.keys():
+            return self.childrenSet[childDontext.id]
+        self.dcontext.children_id.append(childDontext.id)
+        childContext = Context(childDontext)
+        self.childrenSet[childDontext.id] = childContext
+        return childContext
 
-    if DEBUG_MOED == True:
-        debug()
-        exit()
+    def getId(self):
+        return self.dcontext.id
 
-    # check the number of arguments.
-    if len(sys.argv[1:]) != 2:
-        sys.exit("Invalid Inputs.\nHow to run this file:\npython3 hpctoolkit-converter.py 'input name' 'output name'")
-
-    input, output = sys.argv[1:]
-    if not input or not output:
-        sys.exit("Reenter the command again.")
-
-    # check the output format: 
-    # if the file contains '.drcctprof' and if the file is end with .drcctprof
-    idx = (output.find('.drcctprof'))
-    if '.drcctprof' not in output or len(output[idx:]) != 10:
-        sys.exit("Output format should be .drcctprof")
-
-    # check the input file
-    if not Path(input).is_dir():
-        sys.exit("Input path doesn't exist.")
-
+class ContextTable:
+    def __init__(self, profile:drcctprof_profile.Profile):
+        self.profile = profile
+        self.table = {}
     
-    main(input, output)
+    def addContext(self, contextId, location:drcctprof_profile.Location, parentContext:Context):
+        key = contextId
+        if key in self.table.keys():
+            return self.table[key]
+        dcontext = self.profile.context.add()
+        dcontext.id = contextId
+        dcontext.location_id = location.id
+        if parentContext is None:
+            dcontext.parent_id = 0
+            self.table[key] = Context(dcontext)
+        else:
+            dcontext.parent_id = parentContext.getId()
+            self.table[key] = parentContext.addChild(dcontext)
+        return self.table[key]
+
+class ContextMsg:
+    def __init__(self, contextId, filePath, name, system_name, start_line, lineNo):
+        self.contextId = contextId
+        self.filePath = filePath
+        self.name = name
+        self.system_name = system_name
+        self.start_line = start_line
+        self.lineNo = lineNo
+
+class MetricMsg:
+    def __init__(self, intValue, uintValue, strValue):
+        self.intValue = intValue
+        self.uintValue = uintValue
+        self.strValue = strValue
+
+class Profile:
+    def __init__(self, drcctprofProfile:drcctprof_profile.Profile):
+        self.drcctprofProfile = drcctprofProfile
+
+        self.stringTable = StringTable(self.drcctprofProfile)
+        self.souceFileTable = SouceFileTable(self.drcctprofProfile)
+        self.functionTable = FunctionTable(self.drcctprofProfile)
+        self.locationTable = LocationTable(self.drcctprofProfile)
+        self.contextTable = ContextTable(self.drcctprofProfile)
+
+    def addMetricType(self, value_type, unit, des):
+        metric_type = self.drcctprofProfile.metric_type.add()
+        metric_type.value_type = value_type
+        metric_type.unit = self.stringTable.addString(unit)
+        # print("metric_type.unit" + str(metric_type.unit))
+        metric_type.des = self.stringTable.addString(des)
     
-        #print("Unexpected Error")
+    def addSouceFile(self, fileName, filePath, type):
+        return self.souceFileTable.addSourceFile(self.stringTable.addString(fileName), self.stringTable.addString(filePath), type)
+    
+    def addFunction(self, filePath, name, system_name, start_line):
+        return self.functionTable.addFunction(self.addSouceFile(filePath, filePath, 0), self.stringTable.addString(name), self.stringTable.addString(system_name), start_line)
+
+    def addLocation(self, filePath, name, system_name, start_line, lineNo):
+        return self.locationTable.addLocation(self.addFunction(filePath, name, system_name, start_line), lineNo)
+
+    def addContext(self, contextId, filePath, name, system_name, start_line, lineNo, parentContext:Context):
+        return self.contextTable.addContext(contextId, self.addLocation(filePath, name, system_name, start_line, lineNo), parentContext)
+    
+    def addContextFromMsg(self, contextMsg:ContextMsg, parentContext:Context):
+        return self.addContext(contextMsg.contextId, contextMsg.filePath, contextMsg.name, contextMsg.system_name, contextMsg.start_line, contextMsg.lineNo, parentContext)
+
+    def addSample(self, contextMsgList:[], metricList:[]):
+        curContext = None
+        # for contextMsg in reversed(contextMsgList):
+        for contextMsg in contextMsgList:
+            curContext = self.addContextFromMsg(contextMsg, curContext)
+        if curContext != None:
+            sample = self.drcctprofProfile.sample.add()
+            sample.context_id = curContext.getId()
+            for metricMsg in metricList:
+                metric = sample.metric.add()
+                metric.int_value = int(metricMsg.intValue)
+                metric.uint_value = int(metricMsg.uintValue)
+                metric.str_value = self.stringTable.addString(metricMsg.strValue)
+
+            return sample
+        return None
+
+    def serializeToString(self):
+        return self.drcctprofProfile.SerializeToString()
+
+
+class Builder:
+
+    def __init__(self):
+        self.profile = Profile(drcctprof_profile.Profile())
+
+    def generateProfile(self, fileFullPath):
+        f = open(fileFullPath, "wb")
+        f.write(self.profile.serializeToString())
+        f.close()
+        print("generate drcctprof data file at " + os.path.abspath(fileFullPath))
+
+    def addMetricType(self, value_type, unit, des):
+        self.profile.addMetricType(value_type, unit, des)
+
+    def addSample(self, contextMsgList:[], metricList:[]):
+        self.profile.addSample(contextMsgList, metricList)
+    
+
+
