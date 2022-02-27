@@ -1,0 +1,3 @@
+[submodule "hatchet"]
+	path = hatchet
+	url = https://github.com/hatchet/hatchet.git
