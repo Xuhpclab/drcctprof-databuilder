@@ -4,7 +4,7 @@ import collections
 from curses import meta
 import os
 import sys
-sys.path.append('/Users/rundiliu/Documents/Github/hatchet')
+sys.path.append('./hatchet')
 import hatchet as ht
 from pathlib import Path
 from hatchet.node import Node
@@ -122,7 +122,7 @@ def main(input_hpctoolkit, output_hpctoolkit):
             else :
                 id, file, name, line, startline = contextMsgDic['nid'], parentContextMsgDic['file'], parentContextMsgDic['name'].split("+:+")[1], contextMsgDic['line'], parentContextMsgDic['line']
             
-            print(id, name, line)
+            # print(id, name, line)
 
 
             if file[0] == '.':
@@ -136,7 +136,7 @@ def main(input_hpctoolkit, output_hpctoolkit):
 
     builder.generateProfile(output_hpctoolkit)
 
-DEBUG_MOED = True   
+DEBUG_MOED = False   
 def debug():
     main("./tests/data/hpctoolkit-cpi-database", "debug.drcctprof")
     
