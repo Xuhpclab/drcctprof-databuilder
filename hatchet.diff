@@ -1,49 +1,6 @@
-diff --git a/hatchet/readers/hpctoolkit_reader.py b/hatchet/readers/hpctoolkit_reader.py
-index 0bae47b..d4533a8 100644
---- a/hatchet/readers/hpctoolkit_reader.py
-+++ b/hatchet/readers/hpctoolkit_reader.py
-@@ -212,9 +212,9 @@ class HPCToolkitReader:
-         ]
-         for idx, name in enumerate(metric_names):
-             if name == "CPUTIME (usec) (E)" or name == "CPUTIME (sec) (E)":
--                metric_names[idx] = "time"
-+                metric_names[idx] = "time (E)"
-             if name == "CPUTIME (usec) (I)" or name == "CPUTIME (sec) (I)":
--                metric_names[idx] = "time (inc)"
-+                metric_names[idx] = "time (I)"
- 
-         self.metric_columns = metric_names
-         df_columns = self.metric_columns + ["nid", "rank", "thread"]
-@@ -268,8 +268,8 @@ class HPCToolkitReader:
-             node_dict = self.create_node_dict(
-                 nid,
-                 graph_root,
--                self.procedure_names[root.get("n")],
--                "PF",
-+                "0+:+" + self.procedure_names[root.get("n")],
-+                "PFR",
-                 self.src_files[src_file],
-                 int(root.get("l")),
-                 self.load_modules[root.get("lm")],
-@@ -336,8 +336,9 @@ class HPCToolkitReader:
-         if xml_tag == "PF" or xml_tag == "Pr":
-             # procedure
-             name = self.procedure_names[xml_node.get("n")]
--            if parent_line != 0:
--                name = str(parent_line) + ":" + name
-+            # if parent_line != 0:
-+            #     name = str(parent_line) + ":" + name
-+            name = str(parent_line) + "+:+" + name
-             src_file = xml_node.get("f")
-             line = int(xml_node.get("l"))
- 
-diff --git a/install.sh b/install.sh
-index 6029367..eef9a26 100755
---- a/install.sh
-+++ b/install.sh
-@@ -9,4 +9,4 @@ case "$PYTHONPATH" in
-         ;;
- esac
- 
--python setup.py build_ext --inplace
-+python3 setup.py build_ext --inplace
+diff --git a/hatchet b/hatchet
+--- a/hatchet
++++ b/hatchet
+@@ -1 +1 @@
+-Subproject commit 4e7b7f344d0ca53bf89caaf1db5bbf4d8351d298
++Subproject commit 4e7b7f344d0ca53bf89caaf1db5bbf4d8351d298-dirty
