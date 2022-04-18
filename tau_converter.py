@@ -1,4 +1,3 @@
-from collections import deque
 import os
 from re import L
 import numpy as np
@@ -8,15 +7,29 @@ import hatchet as ht
 from pathlib import Path
 from hatchet import GraphFrame
 import drcctprof_data_builder as ddb
-from anytree import Node, RenderTree
 
 root = None
 check = True
 ID = 0 # manually assign the id number
-all = [] # all paths with id, name, file, line, and start line
+
+"""
+lists in a list. 
+each list in a list presents a path.
+each list contains multiple tuples.
+a tuple means a node, consists of id, name, file, start line, and row respectively.
+Example:
+[
+    [('.TAU application', 0, '[unknown]', 0, 0)], 
+    [('.TAU application', 0, '[unknown]', 0, 0), ('MPI_Bcast()', 1, '[unknown]', 0, 0)], 
+    [('.TAU application', 0, '[unknown]', 0, 0), ('MPI_Comm_rank()', 2, '[unknown]', 0, 0)], 
+    [('.TAU application', 0, '[unknown]', 0, 0), ('MPI_Comm_size()', 3, '[unknown]', 0, 0)]
+]
+"""
+all = []
+
 
 class TreeNode:
-    def __init__(self, name, parent, file, line, start_line):
+    def __init__(self, name, parent, file, line, start_line, row):
         global ID
         self.parent = parent
         self.name = name
@@ -26,6 +39,7 @@ class TreeNode:
         self.file = file
         self.line = line
         self.start_line = start_line
+        self.row = row # use a row to get the time
     
     def add_child(self, node):
         self.children.append(node)
@@ -35,6 +49,7 @@ class TreeNode:
         return self.children
 
     def __str__(self, level=0):
+        # print all info except row
         ret = "\t"*level+repr(self.name)+", id:"+str(self.id)+", line:"+str(self.line)+", startline:"+str(self.start_line)+"\n"
         for child in self.children:
             ret += child.__str__(level+1)
@@ -42,7 +57,8 @@ class TreeNode:
     
     def __repr__(self):
         return self.name
-    
+
+# check if the node has child(ren)
 def has_child(node):
     return node.children is not None
 
@@ -50,36 +66,22 @@ def return_all_paths(node, paths):
     global all
     if node is None:
         return
-    paths.append((node.name, node.id, node.file, node.line, node.start_line))
+    paths.append((node.name, node.id, node.file, node.line, node.start_line, node.row))
     if has_child(node):
-        #print(list(reversed(paths)))
         all.append(list(paths))
     for i in node.children:
         return_all_paths(i, paths)
     paths.pop()
 
-def build_tree(node, parent):
-    global root
-    if not parent:
-        root = Node(str(node), parent=parent)
-        return root
-    
-    a = str(node)
-    a = Node(a, parent=parent)
-    return a
-
 def main(tau_profile_dir, output):
     global root
     global check
-    #parent = root
-    
     
     builder = ddb.Builder()
     gf = ht.GraphFrame.from_tau(str(tau_profile_dir))
     df = gf.dataframe
     metric_num = 0
     units = []
-    contextid_dict, id = {}, 0
     #print(gf.tree())
     """
     Add Metric Type: builder.addMetricType()
@@ -116,10 +118,6 @@ def main(tau_profile_dir, output):
         if len(row[0]) == 3:
             thread = row[0][2]
 
-        sumvalue = 0
-        metricMsgList = []
-        
-        contextMsgList = []
         curNode = node
         contextMsgDic = {}
         
@@ -136,39 +134,15 @@ def main(tau_profile_dir, output):
             file, name, line, startline = "[unknown]", contextMsgDic['name'], int(contextMsgDic['line']), contextMsgDic['line']
             
             # building a tree named root
-            if not parent and check:
-                root = TreeNode(name, None, file, line, startline)
+            if not parent and check: # create one at the beginning
+                root = TreeNode(name, None, file, line, startline, row)
                 parent = root
                 check = False
             elif name in parent.name:
-                parent = root
+                continue
             else:
-                if not parent: 
-                    child = root.add_child(TreeNode(name, root, file, line, startline))
-                else:
-                    child = parent.add_child(TreeNode(name, parent, file, line, startline))
+                child = parent.add_child(TreeNode(name, parent, file, line, startline, row))
                 parent = child
-                
-            #print(parent.name)
-            if name in contextid_dict:
-                contextMsgList.append(ddb.ContextMsg(int(contextid_dict[name]), file, name, name, startline, line))
-            else:
-                contextid_dict[name] = id
-                id += 1
-                contextMsgList.append(ddb.ContextMsg(int(contextid_dict[name]), file, name, name, startline, line))
-             
-        for idx in range(metric_num):
-            if units[idx]:
-                metricMsgList.append(ddb.MetricMsg(0, int(row[8 + idx * 2]*1000000), ""))
-            else:
-                metricMsgList.append(ddb.MetricMsg(0, int(row[8 + idx * 2]), ""))
-            if metricMsgList[idx].uintValue > 0:
-                sumvalue += 1
-        if sumvalue < 1:
-            continue
-        
-        #contextMsgList[:] = contextMsgList[::-1]
-        #builder.addSample(contextMsgList, metricMsgList)
     """
     use print(root) to see the whole tree
     """
@@ -176,19 +150,26 @@ def main(tau_profile_dir, output):
     
     paths = tuple()
     return_all_paths(root, path)
+    #print(all)
     for each_path in all:
-        contextMsgList = []
+        sumvalue = 0
+        contextMsgList, metricMsgList = [], []
         for each_node in each_path:
             contextMsgList.append(ddb.ContextMsg(each_node[1], each_node[2], each_node[0], each_node[0], each_node[4], each_node[3]))
+            for idx in range(metric_num):
+                if units[idx]:
+                    metricMsgList.append(ddb.MetricMsg(0, int(each_node[5][8 + idx * 2]*1000000), ""))
+                else:
+                    metricMsgList.append(ddb.MetricMsg(0, int(each_node[5][8 + idx * 2]), ""))
+                if metricMsgList[idx].uintValue > 0:
+                    sumvalue += 1
+                if sumvalue < 1:
+                    continue
         builder.addSample(contextMsgList, metricMsgList)
-    
     builder.generateProfile(output)
         
 
 if __name__ == "__main__":
-
-    # check the number of arguments.
-    
     if len(sys.argv[1:]) != 2:
         sys.exit("Invalid Inputs.\nHow to run this file:\npython3 tau-converter.py 'input name' 'output name'")
 
@@ -196,16 +177,14 @@ if __name__ == "__main__":
     if not input or not output:
         sys.exit("Reenter the command again.")
 
-    # check the output format: 
-    # if the file contains '.drcctprof' and if the file is end with .drcctprof
     idx = (output.find('.drcctprof'))
     if '.drcctprof' not in output or len(output[idx:]) != 10:
         sys.exit("Output format should be .drcctprof")
 
-    # check the input file
     if not Path(input).is_dir():
         sys.exit("Input path doesn't exist.")
     
-    main(input, output)
-    
-        #print("Unexpected Error")
+    try:
+        main(input, output)
+    except:
+        sys.exit("Unexpected error")
