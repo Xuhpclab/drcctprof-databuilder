@@ -34,20 +34,23 @@ class TreeNode:
         self.parent = parent
         self.name = name
         self.children = []
+        self.parents = []
         self.id = ID
         ID += 1
         self.file = file
         self.line = line
         self.start_line = start_line
         self.row = row # use a row to get the time
+
+        p = self.parent
+        while p:
+            self.parents.append(p.name)
+            p = p.parent
     
     def add_child(self, node):
         self.children.append(node)
         return node
-
-    def get_children(self):
-        return self.children
-
+        
     def __str__(self, level=0):
         # print all info except row
         ret = "\t"*level+repr(self.name)+", id:"+str(self.id)+", line:"+str(self.line)+", startline:"+str(self.start_line)+"\n"
@@ -102,6 +105,7 @@ def main(tau_profile_dir, output):
             # break
 
     list_node = []
+    nodes = []
     for row in gf.dataframe.itertuples():
         # the form of index is (node, rank) / (node, rank, thread)
         node = row[0][0]
@@ -136,13 +140,24 @@ def main(tau_profile_dir, output):
             # building a tree named root
             if not parent and check: # create one at the beginning
                 root = TreeNode(name, None, file, line, startline, row)
+                nodes.append(root)
                 parent = root
                 check = False
             elif name in parent.name:
                 continue
             else:
-                child = parent.add_child(TreeNode(name, parent, file, line, startline, row))
-                parent = child
+                tree_node = TreeNode(name, parent, file, line, startline, row)
+                find_same_node = False
+                for i in nodes:
+                    if i.name == name and i.parents == tree_node.parents:
+                        parent = i
+                        find_same_node = True
+                        break
+                
+                if not find_same_node:
+                    child = parent.add_child(tree_node)
+                    nodes.append(tree_node)
+                    parent = child 
     """
     use print(root) to see the whole tree
     """
