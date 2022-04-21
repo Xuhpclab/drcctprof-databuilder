@@ -38,10 +38,10 @@ index 0bae47b..d4533a8 100644
              line = int(xml_node.get("l"))
  
 diff --git a/hatchet/readers/tau_reader.py b/hatchet/readers/tau_reader.py
-index 77ad92a..86e7f49 100644
+index 97c54c6..c0ea303 100644
 --- a/hatchet/readers/tau_reader.py
 +++ b/hatchet/readers/tau_reader.py
-@@ -230,9 +230,9 @@ class TAUReader:
+@@ -232,9 +232,9 @@ class TAUReader:
                          metric_name = "time"
                      elif metric_name == "Name":
                          metric_name == "name"
@@ -54,13 +54,13 @@ index 77ad92a..86e7f49 100644
              return columns
  
          # dirpath -> returns path of a directory, string
-@@ -499,7 +499,7 @@ class TAUReader:
-             # Stack the dataframe
-             dataframe = dataframe.stack()
+@@ -508,7 +508,7 @@ class TAUReader:
+             elif num_of_indices == 3:
+                 dataframe = dataframe.stack().stack()
  
 -        default_metric = "time (inc)"
 +        default_metric = "time (I)"
- 
+         dataframe = dataframe.astype({"line": int, "end_line": int})
          return hatchet.graphframe.GraphFrame(
              graph, dataframe, self.exc_metrics, self.inc_metrics, default_metric
 diff --git a/install.sh b/install.sh
