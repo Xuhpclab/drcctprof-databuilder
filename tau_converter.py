@@ -16,13 +16,12 @@ ID = 0 # manually assign the id number
 lists in a list. 
 each list in a list presents a path.
 each list contains multiple tuples.
-a tuple means a node, consists of id, name, file, start line, and row respectively.
+a tuple means a node, consists of id, name, file, start line, row, and rows respectively.
 Example:
 [
-    [('.TAU application', 0, '[unknown]', 0, 0)], 
-    [('.TAU application', 0, '[unknown]', 0, 0), ('MPI_Bcast()', 1, '[unknown]', 0, 0)], 
-    [('.TAU application', 0, '[unknown]', 0, 0), ('MPI_Comm_rank()', 2, '[unknown]', 0, 0)], 
-    [('.TAU application', 0, '[unknown]', 0, 0), ('MPI_Comm_size()', 3, '[unknown]', 0, 0)]
+    [(name1, id, file, line, start_line, row, rows)], 
+    [(name1, id, file, line, start_line, row, rows), (name2, id, file, line, start_line, row, rows)], 
+    [(name1, id, file, line, start_line, row, rows), (name3, id, file, line, start_line, row, rows)]
 ]
 """
 all = []
@@ -40,8 +39,15 @@ class TreeNode:
         self.file = file
         self.line = line
         self.start_line = start_line
-        self.row = row # use a row to get the time
+        self.row = row
+        self.rows = set()
+        self.rows.add(row)
 
+        """
+        fill the list of self.parents, 
+        if two nodes have exact same parents and names of two nodes are same, 
+        then consider they are same one.
+        """
         p = self.parent
         while p:
             self.parents.append(p.name)
@@ -53,7 +59,10 @@ class TreeNode:
         
     def __str__(self, level=0):
         # print all info except row
-        ret = "\t"*level+repr(self.name)+", id:"+str(self.id)+", line:"+str(self.line)+", startline:"+str(self.start_line)+"\n"
+        #prt_rows = ''
+        #for p in self.rows: prt_rows += str(p)
+        ret = "\t"*level+repr(self.name)+", id:"+str(self.id)+", line:"+str(self.line)+", startline:"+str(self.start_line)+", rows:"+str(len(self.rows)) +"\n"
+        #ret = "\t"*level+repr(self.name)+",rows: "+prt_rows+"\n"
         for child in self.children:
             ret += child.__str__(level+1)
         return ret
@@ -65,16 +74,18 @@ class TreeNode:
 def has_child(node):
     return node.children is not None
 
+
 def return_all_paths(node, paths):
     global all
     if node is None:
         return
-    paths.append((node.name, node.id, node.file, node.line, node.start_line, node.row))
+    paths.append((node.name, node.id, node.file, node.line, node.start_line, node.row, node.rows))
     if has_child(node):
         all.append(list(paths))
     for i in node.children:
         return_all_paths(i, paths)
     paths.pop()
+
 
 def main(tau_profile_dir, output):
     global root
@@ -85,7 +96,6 @@ def main(tau_profile_dir, output):
     df = gf.dataframe
     metric_num = 0
     units = []
-    #print(gf.tree())
     """
     Add Metric Type: builder.addMetricType()
     """
@@ -104,16 +114,23 @@ def main(tau_profile_dir, output):
             builder.addMetricType(1, unit, des)
             # break
 
-    list_node = []
     nodes = []
+    sample_map = {} #key is name, value is the number of samples
+    last_row_name, sample_num = None, 0
     for row in gf.dataframe.itertuples():
-        # the form of index is (node, rank) / (node, rank, thread)
         node = row[0][0]
+        if last_row_name is None:
+            sample_num = 1
+        elif last_row_name == node:
+            sample_num += 1
+        else:
+            last_row_name = None
+            sample_num = 1
+        last_row_name = node
+        
         path = []
-        if str(node.path()) not in list_node and not node.children:
-            for cur in node.path():
-                path.append(cur)
-                list_node.append(str(node.path()))
+        for cur in node.path():
+            path.append(cur)
         
         if node.frame.get('type') != 'function' and node.frame.get('type') != 'statement':
             continue
@@ -124,67 +141,79 @@ def main(tau_profile_dir, output):
 
         curNode = node
         contextMsgDic = {}
-        
         parent = root
         for idx, val in enumerate(path):
             if idx >= len(path):
                 break
             curNode = val
             if thread > -1:
-                contextMsgDic = gf.dataframe.loc[(curNode, rank, thread)].to_dict()
+                contextMsgDic = dict(gf.dataframe.loc[(curNode, rank, thread)])
             else:
                 contextMsgDic = dict(gf.dataframe.loc[(curNode, rank)])
 
-            file, name, line, startline = "[unknown]", contextMsgDic['name'], int(contextMsgDic['line']), contextMsgDic['line']
-            
+            file, name, line, startline = contextMsgDic['file'], contextMsgDic['name'], int(contextMsgDic['line']), contextMsgDic['line']
+            if str(file) == '0':
+                file = "[unknown]"
+            if name in sample_map: sample_map[name] = max(sample_num, sample_map[name])
+            else:sample_map[name] = sample_num
+
             # building a tree named root
             if not parent and check: # create one at the beginning
                 root = TreeNode(name, None, file, line, startline, row)
                 nodes.append(root)
                 parent = root
                 check = False
-            elif name in parent.name:
-                continue
             else:
                 tree_node = TreeNode(name, parent, file, line, startline, row)
                 find_same_node = False
                 for i in nodes:
-                    if i.name == name and i.parents == tree_node.parents:
-                        parent = i
+                    if name == root.name and i.parents == root.parents and i.file == file and i.line == line:
+                        if len(path) == 1:
+                            i.rows.add(row)
                         find_same_node = True
-                        break
-                
+                        parent = root
+                    elif i.name == name and i.parents == tree_node.parents:
+                        if i.file == file and i.line == line:
+                            i.rows.add(row)
+                            parent = i
+                            find_same_node = True
+                            break
                 if not find_same_node:
                     child = parent.add_child(tree_node)
                     nodes.append(tree_node)
-                    parent = child 
+                    parent = child
+    
+    
     """
     use print(root) to see the whole tree
     """
     #print(root)
     
-    paths = tuple()
-    return_all_paths(root, path)
+    paths = []
+    return_all_paths(root, paths)
     #print(all)
     for each_path in all:
         sumvalue = 0
         contextMsgList, metricMsgList = [], []
         for each_node in each_path:
             contextMsgList.append(ddb.ContextMsg(each_node[1], each_node[2], each_node[0], each_node[0], each_node[4], each_node[3]))
-            for idx in range(metric_num):
+        for idx in range(metric_num):
+            for r in each_node[6]:
                 if units[idx]:
-                    metricMsgList.append(ddb.MetricMsg(0, int(each_node[5][8 + idx * 2]*1000000), ""))
+                    metricMsgList.append(ddb.MetricMsg(0, int(r[8 + idx * 2]*1000000), ""))
                 else:
-                    metricMsgList.append(ddb.MetricMsg(0, int(each_node[5][8 + idx * 2]), ""))
+                    metricMsgList.append(ddb.MetricMsg(0, int(r[8 + idx * 2]), ""))
                 if metricMsgList[idx].uintValue > 0:
                     sumvalue += 1
                 if sumvalue < 1:
                     continue
-        builder.addSample(contextMsgList, metricMsgList)
+        for _ in range(sample_map[each_node[0]]):
+            builder.addSample(contextMsgList, metricMsgList)
     builder.generateProfile(output)
         
 
 if __name__ == "__main__":
+    
     if len(sys.argv[1:]) != 2:
         sys.exit("Invalid Inputs.\nHow to run this file:\npython3 tau-converter.py 'input name' 'output name'")
 
@@ -199,7 +228,4 @@ if __name__ == "__main__":
     if not Path(input).is_dir():
         sys.exit("Input path doesn't exist.")
     
-    try:
-        main(input, output)
-    except:
-        sys.exit("Unexpected error")
+    main(input, output)
