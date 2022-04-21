@@ -1,3 +1,4 @@
+import json
 import os
 from re import L
 import numpy as np
@@ -42,7 +43,7 @@ class TreeNode:
         self.row = row
         self.rows = set()
         self.rows.add(row)
-
+        
         """
         fill the list of self.parents, 
         if two nodes have exact same parents and names of two nodes are same, 
@@ -59,10 +60,10 @@ class TreeNode:
         
     def __str__(self, level=0):
         # print all info except row
-        #prt_rows = ''
-        #for p in self.rows: prt_rows += str(p)
+        
         ret = "\t"*level+repr(self.name)+", id:"+str(self.id)+", line:"+str(self.line)+", startline:"+str(self.start_line)+", rows:"+str(len(self.rows)) +"\n"
         #ret = "\t"*level+repr(self.name)+",rows: "+prt_rows+"\n"
+        
         for child in self.children:
             ret += child.__str__(level+1)
         return ret
@@ -156,7 +157,6 @@ def main(tau_profile_dir, output):
                 file = "[unknown]"
             if name in sample_map: sample_map[name] = max(sample_num, sample_map[name])
             else:sample_map[name] = sample_num
-
             # building a tree named root
             if not parent and check: # create one at the beginning
                 root = TreeNode(name, None, file, line, startline, row)
@@ -167,6 +167,7 @@ def main(tau_profile_dir, output):
                 tree_node = TreeNode(name, parent, file, line, startline, row)
                 find_same_node = False
                 for i in nodes:
+                    #if name == root.name and parent == root.parents and file == root.file and line == root.line:
                     if name == root.name and i.parents == root.parents and i.file == file and i.line == line:
                         if len(path) == 1:
                             i.rows.add(row)
@@ -174,7 +175,10 @@ def main(tau_profile_dir, output):
                         parent = root
                     elif i.name == name and i.parents == tree_node.parents:
                         if i.file == file and i.line == line:
-                            i.rows.add(row)
+                            cur_name = (str(node).split(','))[0].split(": ")[1]
+                            cur_name = cur_name[1:len(cur_name)-1]
+                            if cur_name == name:
+                                i.rows.add(row)
                             parent = i
                             find_same_node = True
                             break
@@ -200,9 +204,9 @@ def main(tau_profile_dir, output):
         for idx in range(metric_num):
             for r in each_node[6]:
                 if units[idx]:
-                    metricMsgList.append(ddb.MetricMsg(0, int(r[8 + idx * 2]*1000000), ""))
+                    metricMsgList.append(ddb.MetricMsg(0, int(r[9 + idx * 2]*1000000), ""))
                 else:
-                    metricMsgList.append(ddb.MetricMsg(0, int(r[8 + idx * 2]), ""))
+                    metricMsgList.append(ddb.MetricMsg(0, int(r[9 + idx * 2]), ""))
                 if metricMsgList[idx].uintValue > 0:
                     sumvalue += 1
                 if sumvalue < 1:
