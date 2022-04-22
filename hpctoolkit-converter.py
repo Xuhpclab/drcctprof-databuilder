@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 
-import collections
-from curses import meta
 import os
 import sys
-sys.path.append('./hatchet')
+sys.path.insert(0, './hatchet')
 import hatchet as ht
 from pathlib import Path
-from hatchet.node import Node
-from hatchet.frame import Frame
-from hatchet.readers.hpctoolkit_reader import HPCToolkitReader
-from numpy import uint
 import drcctprof_data_builder as ddb
 
 def main(input_hpctoolkit, output_hpctoolkit):
@@ -136,9 +130,9 @@ def main(input_hpctoolkit, output_hpctoolkit):
 
     builder.generateProfile(output_hpctoolkit)
 
-DEBUG_MOED = False   
+DEBUG_MOED = True   
 def debug():
-    main("./tests/data/hpctoolkit-cpi-database", "debug.drcctprof")
+    main("./tests/data/hpctoolkit-cpi-database", "hpctoolkit.debug.drcctprof")
     
 if __name__ == "__main__":
 

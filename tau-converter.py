@@ -1,11 +1,9 @@
-import json
-import os
-from re import L
+#!/usr/bin/env python3
+
 import sys
-sys.path.append('./hatchet')
+sys.path.insert(0, './hatchet')
 import hatchet as ht
 from pathlib import Path
-from hatchet import GraphFrame
 import drcctprof_data_builder as ddb
 
 root = None
@@ -202,7 +200,7 @@ def main(tau_profile_dir, output):
         contextMsgList = []
         for each_node in each_path:
             contextMsgList.append(ddb.ContextMsg(each_node[1], each_node[2], each_node[0], each_node[0], each_node[4], each_node[3]))
-        print(each_node[0])
+        # print(each_node[0])
         for r in each_node[6]:
             metricMsgList = []
             for idx in range(metric_num):
@@ -211,7 +209,7 @@ def main(tau_profile_dir, output):
                     metricValue = int(r[8 + idx * 2]*1000000)    
                 else:
                     metricValue = int(r[8 + idx * 2])
-                print(metricValue)
+                # print(metricValue)
                 metricMsgList.append(ddb.MetricMsg(0, metricValue, ""))
                 if metricMsgList[idx].uintValue > 0:
                     sumvalue += 1
@@ -221,9 +219,9 @@ def main(tau_profile_dir, output):
             
     builder.generateProfile(output)
         
-DEBUG_MOED = False
+DEBUG_MOED = True
 def debug():
-    main("./tests/data/profile", "tau.debug.drcctprof")
+    main("./tests/data/tau_data", "tau.debug.drcctprof")
 
 if __name__ == "__main__":
     

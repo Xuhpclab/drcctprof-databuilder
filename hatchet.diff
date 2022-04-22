@@ -64,12 +64,13 @@ index 97c54c6..c0ea303 100644
          return hatchet.graphframe.GraphFrame(
              graph, dataframe, self.exc_metrics, self.inc_metrics, default_metric
 diff --git a/install.sh b/install.sh
-index 6029367..eef9a26 100755
+index 6029367..7f85b8f 100755
 --- a/install.sh
 +++ b/install.sh
-@@ -9,4 +9,4 @@ case "$PYTHONPATH" in
+@@ -9,4 +9,5 @@ case "$PYTHONPATH" in
          ;;
  esac
  
 -python setup.py build_ext --inplace
-+python3 setup.py build_ext --inplace
++PYTHON_BIN=$(which python3)
++${PYTHON_BIN} setup.py build_ext --inplace
