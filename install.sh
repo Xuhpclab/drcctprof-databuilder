@@ -6,6 +6,6 @@ ${PYTHON_BIN} -m pip install --upgrade protobuf
 git submodule init
 git submodule update
 cd hatchet
-${PYTHON_BIN} -m pip install --upgrade -r requirements.txt
+${PYTHON_BIN} -m pip install --user --upgrade -r requirements.txt
 git apply ../hatchet.diff
 source ./install.sh
