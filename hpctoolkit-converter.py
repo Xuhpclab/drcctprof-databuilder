@@ -130,7 +130,7 @@ def main(input_hpctoolkit, output_hpctoolkit):
 
     builder.generateProfile(output_hpctoolkit)
 
-DEBUG_MOED = True   
+DEBUG_MOED = False   
 def debug():
     main("./tests/data/hpctoolkit-cpi-database", "hpctoolkit.debug.drcctprof")
     

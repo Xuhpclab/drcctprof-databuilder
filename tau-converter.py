@@ -219,7 +219,7 @@ def main(tau_profile_dir, output):
             
     builder.generateProfile(output)
         
-DEBUG_MOED = True
+DEBUG_MOED = False
 def debug():
     main("./tests/data/tau_data", "tau.debug.drcctprof")
 
