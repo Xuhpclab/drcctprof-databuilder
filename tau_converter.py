@@ -1,7 +1,6 @@
 import json
 import os
 from re import L
-import numpy as np
 import sys
 sys.path.append('./hatchet')
 import hatchet as ht
@@ -118,7 +117,9 @@ def main(tau_profile_dir, output):
     nodes = []
     sample_map = {} #key is name, value is the number of samples
     last_row_name, sample_num = None, 0
-    for row in gf.dataframe.itertuples():
+    rows = gf.dataframe.itertuples()
+    for row in rows:
+        # print(row)
         node = row[0][0]
         if last_row_name is None:
             sample_num = 1
@@ -198,26 +199,38 @@ def main(tau_profile_dir, output):
     #print(all)
     for each_path in all:
         sumvalue = 0
-        contextMsgList, metricMsgList = [], []
+        contextMsgList = []
         for each_node in each_path:
             contextMsgList.append(ddb.ContextMsg(each_node[1], each_node[2], each_node[0], each_node[0], each_node[4], each_node[3]))
-        for idx in range(metric_num):
-            for r in each_node[6]:
+        print(each_node[0])
+        for r in each_node[6]:
+            metricMsgList = []
+            for idx in range(metric_num):
+                metricValue = 0
                 if units[idx]:
-                    metricMsgList.append(ddb.MetricMsg(0, int(r[9 + idx * 2]*1000000), ""))
+                    metricValue = int(r[8 + idx * 2]*1000000)    
                 else:
-                    metricMsgList.append(ddb.MetricMsg(0, int(r[9 + idx * 2]), ""))
+                    metricValue = int(r[8 + idx * 2])
+                print(metricValue)
+                metricMsgList.append(ddb.MetricMsg(0, metricValue, ""))
                 if metricMsgList[idx].uintValue > 0:
                     sumvalue += 1
-                if sumvalue < 1:
-                    continue
-        for _ in range(sample_map[each_node[0]]):
+            if sumvalue < 1:
+                continue        
             builder.addSample(contextMsgList, metricMsgList)
+            
     builder.generateProfile(output)
         
+DEBUG_MOED = False
+def debug():
+    main("./tests/data/profile", "tau.debug.drcctprof")
 
 if __name__ == "__main__":
     
+    if DEBUG_MOED == True:
+        debug()
+        exit()
+
     if len(sys.argv[1:]) != 2:
         sys.exit("Invalid Inputs.\nHow to run this file:\npython3 tau-converter.py 'input name' 'output name'")
 
