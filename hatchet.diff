@@ -38,10 +38,36 @@ index 0bae47b..d4533a8 100644
              line = int(xml_node.get("l"))
  
 diff --git a/hatchet/readers/tau_reader.py b/hatchet/readers/tau_reader.py
-index 97c54c6..c0ea303 100644
+index 97c54c6..48e8669 100644
 --- a/hatchet/readers/tau_reader.py
 +++ b/hatchet/readers/tau_reader.py
-@@ -232,9 +232,9 @@ class TAUReader:
+@@ -201,6 +201,25 @@ class TAUReader:
+ 
+                 parent_node.add_child(child_node)
+                 child_node.add_parent(parent_node)
++                if len(grand_parent_callpath) == 0:
++                    metric_values = []
++                    for value in root_values:
++                        metric_values.append(0.0)
++                    node_dict = self.create_node_dict(
++                        parent_node,
++                        self.columns,
++                        metric_values,
++                        parent_name,
++                        None,
++                        None,
++                        0,
++                        0,
++                        rank,
++                        thread,
++                    )
++                    self.node_dicts.append(node_dict)
++                    list_roots.append(parent_node)
++                    return
+                 _create_parent(parent_node, grand_parent_callpath)
+ 
+         def _construct_column_list(first_rank_filenames):
+@@ -232,9 +251,9 @@ class TAUReader:
                          metric_name = "time"
                      elif metric_name == "Name":
                          metric_name == "name"
@@ -54,7 +80,7 @@ index 97c54c6..c0ea303 100644
              return columns
  
          # dirpath -> returns path of a directory, string
-@@ -508,7 +508,7 @@ class TAUReader:
+@@ -508,7 +527,7 @@ class TAUReader:
              elif num_of_indices == 3:
                  dataframe = dataframe.stack().stack()
  

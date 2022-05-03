@@ -6,27 +6,26 @@ import hatchet as ht
 from pathlib import Path
 import drcctprof_data_builder as ddb
 
-root = None
-check = True
+roots = []
 ID = 0 # manually assign the id number
 
 """
 lists in a list. 
 each list in a list presents a path.
 each list contains multiple tuples.
-a tuple means a node, consists of id, name, file, start line, row, and rows respectively.
+a tuple means a node, consists of id, name, file, start line, and rows respectively.
 Example:
 [
-    [(name1, id, file, line, start_line, row, rows)], 
-    [(name1, id, file, line, start_line, row, rows), (name2, id, file, line, start_line, row, rows)], 
-    [(name1, id, file, line, start_line, row, rows), (name3, id, file, line, start_line, row, rows)]
+    [(name1, id, file, line, start_line, rows)], 
+    [(name1, id, file, line, start_line, rows), (name2, id, file, line, start_line, rows)], 
+    [(name1, id, file, line, start_line, rows), (name3, id, file, line, start_line, rows)]
 ]
 """
-all = []
+all_paths = []
 
 
 class TreeNode:
-    def __init__(self, name, parent, file, line, start_line, row):
+    def __init__(self, name, parent, file, line, start_line):
         global ID
         self.parent = parent
         self.name = name
@@ -37,9 +36,7 @@ class TreeNode:
         self.file = file
         self.line = line
         self.start_line = start_line
-        self.row = row
         self.rows = set()
-        self.rows.add(row)
         
         """
         fill the list of self.parents, 
@@ -54,9 +51,12 @@ class TreeNode:
     def add_child(self, node):
         self.children.append(node)
         return node
+    
+    def add_row(self, row):
+        self.rows.add(row)
         
     def __str__(self, level=0):
-        # print all info except row
+        # print all_paths info except row
         
         ret = "\t"*level+repr(self.name)+", id:"+str(self.id)+", line:"+str(self.line)+", startline:"+str(self.start_line)+", rows:"+str(len(self.rows)) +"\n"
         #ret = "\t"*level+repr(self.name)+",rows: "+prt_rows+"\n"
@@ -74,12 +74,12 @@ def has_child(node):
 
 
 def return_all_paths(node, paths):
-    global all
+    global all_paths
     if node is None:
         return
-    paths.append((node.name, node.id, node.file, node.line, node.start_line, node.row, node.rows))
+    paths.append((node.name, node.id, node.file, node.line, node.start_line, node.rows))
     if has_child(node):
-        all.append(list(paths))
+        all_paths.append(list(paths))
     for i in node.children:
         return_all_paths(i, paths)
     paths.pop()
@@ -87,17 +87,28 @@ def return_all_paths(node, paths):
 
 def main(tau_profile_dir, output):
     global root
-    global check
     
     builder = ddb.Builder()
     gf = ht.GraphFrame.from_tau(str(tau_profile_dir))
+    # print(gf.tree())
     df = gf.dataframe
+    multiRank = False
+    multiThread = False
+    if len(df.index.names) == 2:
+        if df.index.names[1] == 'thread':
+            multiThread = True
+        else:
+            multiRank = True
+    elif len(df.index.names) == 3:
+        multiThread = True
+        multiRank = True
+    
     metric_num = 0
     units = []
     """
     Add Metric Type: builder.addMetricType()
     """
-    for column in df.columns.values:
+    for idx, column in enumerate(df.columns.values):
         if "(I)" in column:
             continue
         if "(E)" in column:
@@ -107,7 +118,7 @@ def main(tau_profile_dir, output):
             unit = ''
             if len(temp) == 2:
                 unit = temp[1].split(")")[0].strip()
-            units.append(unit == "sec")
+            units.append([idx, unit == "sec"])
             metric_num += 1
             builder.addMetricType(1, unit, des)
             # break
@@ -117,8 +128,23 @@ def main(tau_profile_dir, output):
     last_row_name, sample_num = None, 0
     rows = gf.dataframe.itertuples()
     for row in rows:
-        # print(row)
-        node = row[0][0]
+        if multiRank and multiThread:
+            node = row[0][0]
+            rank = row[0][1]
+            thread = row[0][2]
+        elif multiRank and not multiThread:
+            node = row[0][0]
+            rank = row[0][1]
+            thread = -1
+        elif not multiRank and multiThread:
+            node = row[0][0]
+            rank = -1
+            thread = row[0][1]
+        else:
+            node = row[0]
+            rank = -1
+            thread = -1
+
         if last_row_name is None:
             sample_num = 1
         elif last_row_name == node:
@@ -134,81 +160,79 @@ def main(tau_profile_dir, output):
         
         if node.frame.get('type') != 'function' and node.frame.get('type') != 'statement':
             continue
-        rank = row[0][1]
-        thread = -1
-        if len(row[0]) == 3:
-            thread = row[0][2]
+        
+        
 
         curNode = node
         contextMsgDic = {}
-        parent = root
+        parent = None
         for idx, val in enumerate(path):
             if idx >= len(path):
                 break
             curNode = val
-            if thread > -1:
-                contextMsgDic = dict(gf.dataframe.loc[(curNode, rank, thread)])
-            else:
-                contextMsgDic = dict(gf.dataframe.loc[(curNode, rank)])
+            try:
+                if thread > -1 and rank > -1:
+                    contextMsgDic = dict(gf.dataframe.loc[(curNode, rank, thread)])
+                elif rank > -1:
+                    contextMsgDic = dict(gf.dataframe.loc[(curNode, rank)])
+                elif thread > -1:
+                    contextMsgDic = dict(gf.dataframe.loc[(curNode, thread)])
+                else:
+                    contextMsgDic = dict(gf.dataframe.loc[curNode])
+            except:
+                continue
 
             file, name, line, startline = contextMsgDic['file'], contextMsgDic['name'], int(contextMsgDic['line']), contextMsgDic['line']
-            if str(file) == '0':
+            if file == None or str(file) == '0':
                 file = "[unknown]"
             if name in sample_map: sample_map[name] = max(sample_num, sample_map[name])
             else:sample_map[name] = sample_num
             # building a tree named root
-            if not parent and check: # create one at the beginning
-                root = TreeNode(name, None, file, line, startline, row)
-                nodes.append(root)
-                parent = root
-                check = False
-            else:
-                tree_node = TreeNode(name, parent, file, line, startline, row)
-                find_same_node = False
-                for i in nodes:
-                    #if name == root.name and parent == root.parents and file == root.file and line == root.line:
-                    if name == root.name and i.parents == root.parents and i.file == file and i.line == line:
-                        if len(path) == 1:
-                            i.rows.add(row)
-                        find_same_node = True
+            
+            if parent == None:
+                for root in roots:
+                    if root.name == name and root.file == file and root.line == line:
                         parent = root
-                    elif i.name == name and i.parents == tree_node.parents:
-                        if i.file == file and i.line == line:
-                            cur_name = (str(node).split(','))[0].split(": ")[1]
-                            cur_name = cur_name[1:len(cur_name)-1]
-                            if cur_name == name:
-                                i.rows.add(row)
-                            parent = i
-                            find_same_node = True
-                            break
-                if not find_same_node:
-                    child = parent.add_child(tree_node)
-                    nodes.append(tree_node)
-                    parent = child
-    
-    
+                        break
+                if parent == None:
+                    parent = TreeNode(name, parent, file, line, startline)
+                    roots.append(parent)
+            else:
+                tree_node = None
+                for node in parent.children:
+                    if node.name == name and node.file == file and node.line == line:
+                        tree_node = node
+                        break
+                if tree_node == None:
+                    tree_node = TreeNode(name, parent, file, line, startline)
+                    parent.add_child(tree_node)
+                parent = tree_node
+                
+        if parent != None:
+            parent.add_row(row)
     """
     use print(root) to see the whole tree
     """
-    #print(root)
-    
-    paths = []
-    return_all_paths(root, paths)
-    #print(all)
-    for each_path in all:
+    for root in roots:
+        # print(root)
+        paths = []
+        return_all_paths(root, paths)
+
+    #print(all_paths)
+    for each_path in all_paths:
         sumvalue = 0
         contextMsgList = []
         for each_node in each_path:
             contextMsgList.append(ddb.ContextMsg(each_node[1], each_node[2], each_node[0], each_node[0], each_node[4], each_node[3]))
         # print(each_node[0])
-        for r in each_node[6]:
+        for r in each_node[5]:
             metricMsgList = []
             for idx in range(metric_num):
                 metricValue = 0
-                if units[idx]:
-                    metricValue = int(r[8 + idx * 2]*1000000)    
+                if units[idx][1]:
+                    metricValue = int(r[units[idx][0]+1]*1000000)    
                 else:
-                    metricValue = int(r[8 + idx * 2])
+                    metricValue = int(r[units[idx][0]+1])
                 # print(metricValue)
                 metricMsgList.append(ddb.MetricMsg(0, metricValue, ""))
                 if metricMsgList[idx].uintValue > 0:
@@ -222,6 +246,7 @@ def main(tau_profile_dir, output):
 DEBUG_MOED = False
 def debug():
     main("./tests/data/tau_data", "tau.debug.drcctprof")
+    # main("./tau_test", "tau.drcctprof")
 
 if __name__ == "__main__":
     
