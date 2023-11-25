@@ -2,7 +2,7 @@
 
 echo "install dependencies"
 PYTHON_BIN=$(which python3)
-${PYTHON_BIN} -m pip install --user --upgrade protobuf
+${PYTHON_BIN} -m pip install --user protobuf==3.20.5
 git submodule init
 git submodule update
 cd hatchet
